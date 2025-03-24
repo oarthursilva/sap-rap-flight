@@ -13,7 +13,12 @@ CLASS lhc_traveldata DEFINITION INHERITING FROM cl_abap_behavior_handler.
       earlynumbering_create FOR NUMBERING
         IMPORTING entities FOR CREATE TravelData,
       setStatusToOpen FOR DETERMINE ON MODIFY
-        IMPORTING keys FOR TravelData~setStatusToOpen.
+        IMPORTING keys FOR TravelData~setStatusToOpen,
+      validateCustomer FOR VALIDATE ON SAVE
+        IMPORTING keys FOR TravelData~validateCustomer.
+
+    METHODS validateDates FOR VALIDATE ON SAVE
+      IMPORTING keys FOR TravelData~validateDates.
 ENDCLASS.
 
 CLASS lhc_traveldata IMPLEMENTATION.
@@ -115,6 +120,132 @@ CLASS lhc_traveldata IMPLEMENTATION.
 
     " set the changing parameter
     reported = CORRESPONDING #( DEEP travels_report ).
+
+  ENDMETHOD.
+
+  METHOD validateCustomer.
+    DATA customers TYPE SORTED TABLE OF /dmo/customer WITH UNIQUE KEY customer_id.
+
+    " Read travel instances of transfered keys
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY TravelData
+        FIELDS ( CustomerID )
+        WITH CORRESPONDING #( keys )
+        RESULT DATA(travels).
+
+    " optimization of DB select: extract distinct non-initial customer IDs
+    customers = CORRESPONDING #( travels
+        DISCARDING DUPLICATES
+        MAPPING customer_id = CustomerID EXCEPT *
+    ).
+
+    IF customers IS NOT INITIAL.
+      " check if customer ID exists
+      SELECT FROM /dmo/customer FIELDS customer_id
+          FOR ALL ENTRIES IN @customers
+          WHERE customer_id = @customers-customer_id
+          INTO TABLE @DATA(valid_customers).
+    ENDIF.
+
+    " raise msg for non existing and initial customer id
+    LOOP AT travels INTO DATA(travel).
+      APPEND VALUE #(
+          %tky        = travel-%tky
+          %state_area = 'VALIDATE_CUSTOMER'
+      ) TO reported-traveldata.
+
+      IF travel-CustomerID IS INITIAL.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #( %tky        = travel-%tky
+                        %state_area = 'VALIDATE_CUSTOMER'
+                        %msg        = NEW /dmo/cm_flight_messages(
+                                                                textid   = /dmo/cm_flight_messages=>enter_customer_id
+                                                                severity = if_abap_behv_message=>severity-error )
+                        %element-CustomerID = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+
+      ELSEIF travel-CustomerID IS NOT INITIAL AND NOT line_exists( valid_customers[ customer_id = travel-CustomerID ] ).
+        APPEND VALUE #(  %tky = travel-%tky ) TO failed-traveldata.
+
+        APPEND VALUE #(  %tky                = travel-%tky
+                         %state_area         = 'VALIDATE_CUSTOMER'
+                         %msg                = NEW /dmo/cm_flight_messages(
+                                                                customer_id = travel-customerid
+                                                                textid      = /dmo/cm_flight_messages=>customer_unkown
+                                                                severity    = if_abap_behv_message=>severity-error )
+                         %element-CustomerID = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validateDates.
+    " Read travel instances of transfered keys
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY TravelData
+        FIELDS ( BeginDate EndDate TravelID )
+        WITH CORRESPONDING #( keys )
+        RESULT DATA(travels).
+
+    LOOP AT travels INTO DATA(travel).
+      APPEND VALUE #(  %tky        = travel-%tky
+                       %state_area = 'VALIDATE_DATES'
+      ) TO reported-traveldata.
+
+      IF travel-BeginDate IS INITIAL.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+
+        APPEND VALUE #( %tky               = travel-%tky
+                        %state_area        = 'VALIDATE_DATES'
+                        %msg               = NEW /dmo/cm_flight_messages(
+                                                                textid   = /dmo/cm_flight_messages=>enter_begin_date
+                                                                severity = if_abap_behv_message=>severity-error )
+                      %element-BeginDate = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+
+      ENDIF.
+
+      IF travel-BeginDate < cl_abap_context_info=>get_system_date( ) AND travel-BeginDate IS NOT INITIAL.
+        APPEND VALUE #( %tky               = travel-%tky ) TO failed-traveldata.
+
+        APPEND VALUE #( %tky               = travel-%tky
+                        %state_area        = 'VALIDATE_DATES'
+                        %msg               = NEW /dmo/cm_flight_messages(
+                                                                begin_date = travel-BeginDate
+                                                                textid     = /dmo/cm_flight_messages=>begin_date_on_or_bef_sysdate
+                                                                severity   = if_abap_behv_message=>severity-error )
+                        %element-BeginDate = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+      ENDIF.
+
+      IF travel-EndDate IS INITIAL.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+
+        APPEND VALUE #( %tky               = travel-%tky
+                        %state_area        = 'VALIDATE_DATES'
+                        %msg               = NEW /dmo/cm_flight_messages(
+                                                               textid   = /dmo/cm_flight_messages=>enter_end_date
+                                                               severity = if_abap_behv_message=>severity-error )
+                        %element-EndDate   = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+      ENDIF.
+
+      IF travel-EndDate < travel-BeginDate AND travel-BeginDate IS NOT INITIAL
+                                           AND travel-EndDate IS NOT INITIAL.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+
+        APPEND VALUE #( %tky               = travel-%tky
+                        %state_area        = 'VALIDATE_DATES'
+                        %msg               = NEW /dmo/cm_flight_messages(
+                                                                textid     = /dmo/cm_flight_messages=>begin_date_bef_end_date
+                                                                begin_date = travel-BeginDate
+                                                                end_date   = travel-EndDate
+                                                                severity   = if_abap_behv_message=>severity-error )
+                        %element-BeginDate = if_abap_behv=>mk-on
+                        %element-EndDate   = if_abap_behv=>mk-on
+        ) TO reported-traveldata.
+      ENDIF.
+    ENDLOOP.
 
   ENDMETHOD.
 
