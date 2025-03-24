@@ -21,6 +21,10 @@ early numbering
   field ( readonly )
   TravelID;
 
+  field ( mandatory )
+  CustomerID,
+  BeginDate,
+  EndDate;
 
   create;
   update;
@@ -28,11 +32,17 @@ early numbering
 
   determination setStatusToOpen on modify { create; }
 
+  validation validateCustomer on save { create; field CustomerID; }
+  validation validateDates on save { create; field BeginDate, EndDate; }
+
   draft action Edit;
   draft action Activate optimized;
   draft action Discard;
   draft action Resume;
-  draft determine action Prepare;
+  draft determine action Prepare {
+    validation validateCustomer;
+    validation validateDates;
+  }
 
   mapping for zdb_flight_td
     {
