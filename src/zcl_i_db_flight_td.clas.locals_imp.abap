@@ -1,12 +1,19 @@
 CLASS lhc_traveldata DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
+    CONSTANTS BEGIN OF travel_status.
+    CONSTANTS open     TYPE /dmo/travel_status VALUE 'O'.
+    CONSTANTS accepted TYPE /dmo/travel_status VALUE 'A'.
+    CONSTANTS rejected TYPE /dmo/travel_status VALUE 'X'.
+    CONSTANTS END OF travel_status.
     METHODS:
       get_global_authorizations FOR GLOBAL AUTHORIZATION
         IMPORTING
         REQUEST requested_authorizations FOR TravelData
         RESULT result,
       earlynumbering_create FOR NUMBERING
-        IMPORTING entities FOR CREATE TravelData.
+        IMPORTING entities FOR CREATE TravelData,
+      setStatusToOpen FOR DETERMINE ON MODIFY
+        IMPORTING keys FOR TravelData~setStatusToOpen.
 ENDCLASS.
 
 CLASS lhc_traveldata IMPLEMENTATION.
@@ -82,6 +89,32 @@ CLASS lhc_traveldata IMPLEMENTATION.
           %is_draft = entity-%is_draft
       ) TO mapped-traveldata.
     ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD setStatusToOpen.
+    " Read travel instances of transfered keys
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY TravelData
+        FIELDS ( OverallStatus )
+        WITH CORRESPONDING #( keys )
+        RESULT DATA(travels)
+        FAILED DATA(travels_failed).
+
+    " if overall travels status is already set, do nothing. i.e. remove such instance
+    DELETE travels WHERE OverallStatus IS NOT INITIAL.
+    CHECK travels IS NOT INITIAL.
+
+    " else set overall travel status to open ('O')
+    MODIFY ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY TravelData
+        UPDATE SET FIELDS
+        WITH VALUE #( FOR travel IN travels ( %tky = travel-%tky
+                                              OverallStatus = travel_status-open ) )
+        REPORTED DATA(travels_report).
+
+    " set the changing parameter
+    reported = CORRESPONDING #( DEEP travels_report ).
 
   ENDMETHOD.
 
