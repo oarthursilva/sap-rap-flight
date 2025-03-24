@@ -1,0 +1,4 @@
+@EndUserText.label: 'Service definition for ZC_DB_FLIGHT_TD'
+define service ZUI_DB_FLIGHT_TD_O4 {
+  expose ZC_DB_FLIGHT_TD as Travel;
+}
