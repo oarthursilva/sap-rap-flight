@@ -2,7 +2,7 @@ projection;
 strict ( 2 );
 use draft;
 
-define behavior for ZC_DB_FLIGHT_TD alias TravelData
+define behavior for ZC_DB_FLIGHT_TD alias Travel
 use etag
 
 {
