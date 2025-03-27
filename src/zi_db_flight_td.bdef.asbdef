@@ -2,7 +2,7 @@ managed implementation in class ZCL_I_DB_FLIGHT_TD unique;
 strict ( 2 );
 with draft;
 
-define behavior for ZI_DB_FLIGHT_TD alias Travel
+define behavior for ZI_DB_FLIGHT_TD alias TravelData
 persistent table zdb_flight_td
 draft table zdb_flight_td_d
 etag master LocalLastChangeAt
