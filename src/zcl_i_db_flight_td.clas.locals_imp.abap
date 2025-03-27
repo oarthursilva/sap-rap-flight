@@ -8,17 +8,19 @@ CLASS lhc_traveldata DEFINITION INHERITING FROM cl_abap_behavior_handler.
     METHODS:
       get_global_authorizations FOR GLOBAL AUTHORIZATION
         IMPORTING
-        REQUEST requested_authorizations FOR TravelData
+        REQUEST requested_authorizations FOR Travel
         RESULT result,
       earlynumbering_create FOR NUMBERING
-        IMPORTING entities FOR CREATE TravelData,
+        IMPORTING entities FOR CREATE Travel,
       setStatusToOpen FOR DETERMINE ON MODIFY
-        IMPORTING keys FOR TravelData~setStatusToOpen,
+        IMPORTING keys FOR Travel~setStatusToOpen,
       validateCustomer FOR VALIDATE ON SAVE
-        IMPORTING keys FOR TravelData~validateCustomer.
+        IMPORTING keys FOR Travel~validateCustomer.
 
     METHODS validateDates FOR VALIDATE ON SAVE
-      IMPORTING keys FOR TravelData~validateDates.
+      IMPORTING keys FOR Travel~validateDates.
+    METHODS deductDiscount FOR MODIFY
+      IMPORTING keys FOR ACTION Travel~deductDiscount RESULT result.
 ENDCLASS.
 
 CLASS lhc_traveldata IMPLEMENTATION.
@@ -33,7 +35,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
     DATA use_number_range    TYPE abap_bool VALUE abap_true.
 
     LOOP AT entities INTO entity WHERE TravelID IS NOT INITIAL.
-      APPEND CORRESPONDING #( entity ) TO mapped-traveldata.
+      APPEND CORRESPONDING #( entity ) TO mapped-travel.
     ENDLOOP.
 
     DATA(entities_wo_travelid) = entities.
@@ -59,12 +61,12 @@ CLASS lhc_traveldata IMPLEMENTATION.
                 %key      = entity-%key
                 %is_draft = entity-%is_draft
                 %msg      = lx_number_ranges
-            ) TO reported-traveldata.
+            ) TO reported-travel.
             APPEND VALUE #(
                 %cid      = entity-%cid
                 %key      = entity-%key
                 %is_draft = entity-%is_draft
-            ) TO failed-traveldata.
+            ) TO failed-travel.
           ENDLOOP.
           EXIT.
       ENDTRY.
@@ -92,7 +94,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
           %cid      = entity-%cid
           %key      = entity-%key
           %is_draft = entity-%is_draft
-      ) TO mapped-traveldata.
+      ) TO mapped-travel.
     ENDLOOP.
 
   ENDMETHOD.
@@ -100,7 +102,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
   METHOD setStatusToOpen.
     " Read travel instances of transfered keys
     READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
-        ENTITY TravelData
+        ENTITY Travel
         FIELDS ( OverallStatus )
         WITH CORRESPONDING #( keys )
         RESULT DATA(travels)
@@ -112,7 +114,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
 
     " else set overall travel status to open ('O')
     MODIFY ENTITIES OF zi_db_flight_td IN LOCAL MODE
-        ENTITY TravelData
+        ENTITY Travel
         UPDATE SET FIELDS
         WITH VALUE #( FOR travel IN travels ( %tky = travel-%tky
                                               OverallStatus = travel_status-open ) )
@@ -128,7 +130,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
 
     " Read travel instances of transfered keys
     READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
-        ENTITY TravelData
+        ENTITY Travel
         FIELDS ( CustomerID )
         WITH CORRESPONDING #( keys )
         RESULT DATA(travels).
@@ -152,20 +154,20 @@ CLASS lhc_traveldata IMPLEMENTATION.
       APPEND VALUE #(
           %tky        = travel-%tky
           %state_area = 'VALIDATE_CUSTOMER'
-      ) TO reported-traveldata.
+      ) TO reported-travel.
 
       IF travel-CustomerID IS INITIAL.
-        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-travel.
         APPEND VALUE #( %tky        = travel-%tky
                         %state_area = 'VALIDATE_CUSTOMER'
                         %msg        = NEW /dmo/cm_flight_messages(
                                                                 textid   = /dmo/cm_flight_messages=>enter_customer_id
                                                                 severity = if_abap_behv_message=>severity-error )
                         %element-CustomerID = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
 
       ELSEIF travel-CustomerID IS NOT INITIAL AND NOT line_exists( valid_customers[ customer_id = travel-CustomerID ] ).
-        APPEND VALUE #(  %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #(  %tky = travel-%tky ) TO failed-travel.
 
         APPEND VALUE #(  %tky                = travel-%tky
                          %state_area         = 'VALIDATE_CUSTOMER'
@@ -174,7 +176,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
                                                                 textid      = /dmo/cm_flight_messages=>customer_unkown
                                                                 severity    = if_abap_behv_message=>severity-error )
                          %element-CustomerID = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -182,7 +184,7 @@ CLASS lhc_traveldata IMPLEMENTATION.
   METHOD validateDates.
     " Read travel instances of transfered keys
     READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
-        ENTITY TravelData
+        ENTITY Travel
         FIELDS ( BeginDate EndDate TravelID )
         WITH CORRESPONDING #( keys )
         RESULT DATA(travels).
@@ -190,10 +192,10 @@ CLASS lhc_traveldata IMPLEMENTATION.
     LOOP AT travels INTO DATA(travel).
       APPEND VALUE #(  %tky        = travel-%tky
                        %state_area = 'VALIDATE_DATES'
-      ) TO reported-traveldata.
+      ) TO reported-travel.
 
       IF travel-BeginDate IS INITIAL.
-        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-travel.
 
         APPEND VALUE #( %tky               = travel-%tky
                         %state_area        = 'VALIDATE_DATES'
@@ -201,25 +203,25 @@ CLASS lhc_traveldata IMPLEMENTATION.
                                                                 textid   = /dmo/cm_flight_messages=>enter_begin_date
                                                                 severity = if_abap_behv_message=>severity-error )
                       %element-BeginDate = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
 
       ENDIF.
 
       IF travel-BeginDate < cl_abap_context_info=>get_system_date( ) AND travel-BeginDate IS NOT INITIAL.
-        APPEND VALUE #( %tky               = travel-%tky ) TO failed-traveldata.
+*        APPEND VALUE #( %tky               = travel-%tky ) TO failed-traveldata.
 
         APPEND VALUE #( %tky               = travel-%tky
                         %state_area        = 'VALIDATE_DATES'
                         %msg               = NEW /dmo/cm_flight_messages(
                                                                 begin_date = travel-BeginDate
                                                                 textid     = /dmo/cm_flight_messages=>begin_date_on_or_bef_sysdate
-                                                                severity   = if_abap_behv_message=>severity-error )
+                                                                severity   = if_abap_behv_message=>severity-warning )
                         %element-BeginDate = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
       ENDIF.
 
       IF travel-EndDate IS INITIAL.
-        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-travel.
 
         APPEND VALUE #( %tky               = travel-%tky
                         %state_area        = 'VALIDATE_DATES'
@@ -227,12 +229,12 @@ CLASS lhc_traveldata IMPLEMENTATION.
                                                                textid   = /dmo/cm_flight_messages=>enter_end_date
                                                                severity = if_abap_behv_message=>severity-error )
                         %element-EndDate   = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
       ENDIF.
 
       IF travel-EndDate < travel-BeginDate AND travel-BeginDate IS NOT INITIAL
                                            AND travel-EndDate IS NOT INITIAL.
-        APPEND VALUE #( %tky = travel-%tky ) TO failed-traveldata.
+        APPEND VALUE #( %tky = travel-%tky ) TO failed-travel.
 
         APPEND VALUE #( %tky               = travel-%tky
                         %state_area        = 'VALIDATE_DATES'
@@ -243,9 +245,48 @@ CLASS lhc_traveldata IMPLEMENTATION.
                                                                 severity   = if_abap_behv_message=>severity-error )
                         %element-BeginDate = if_abap_behv=>mk-on
                         %element-EndDate   = if_abap_behv=>mk-on
-        ) TO reported-traveldata.
+        ) TO reported-travel.
       ENDIF.
     ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD deductDiscount.
+    DATA travels_for_update TYPE TABLE FOR UPDATE zi_db_flight_td.
+    DATA(keys_with_valid_discount) = keys.
+
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        FIELDS ( BookingFee )
+        WITH CORRESPONDING #( keys_with_valid_discount )
+        RESULT DATA(travels).
+
+    LOOP AT travels ASSIGNING FIELD-SYMBOL(<travel>).
+      DATA(reduced_fee) = <travel>-BookingFee * ( 1 - 3 / 10 ).
+      APPEND VALUE #(
+        %tky       = <travel>-%tky
+        BookingFee = reduced_fee
+      ) TO travels_for_update.
+    ENDLOOP.
+
+    " update data with reduced fee
+    MODIFY ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        UPDATE FIELDS ( BookingFee )
+        WITH travels_for_update.
+
+    " read changed data for action result
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        ALL FIELDS WITH
+        CORRESPONDING #( travels )
+        RESULT DATA(travels_with_discount).
+
+    " set action result
+    result = VALUE #( FOR travel IN travels_with_discount (
+      %tky   = travel-%tky
+      %param = travel
+    ) ).
 
   ENDMETHOD.
 
