@@ -1,4 +1,4 @@
-CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+CLASS lhc_traveldata DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
     CONSTANTS BEGIN OF travel_status.
     CONSTANTS open     TYPE /dmo/travel_status VALUE 'O'.
@@ -19,9 +19,11 @@ CLASS lhc_travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
 
     METHODS validateDates FOR VALIDATE ON SAVE
       IMPORTING keys FOR Travel~validateDates.
+    METHODS deductDiscount FOR MODIFY
+      IMPORTING keys FOR ACTION Travel~deductDiscount RESULT result.
 ENDCLASS.
 
-CLASS lhc_travel IMPLEMENTATION.
+CLASS lhc_traveldata IMPLEMENTATION.
   METHOD get_global_authorizations.
   ENDMETHOD.
 
@@ -206,14 +208,14 @@ CLASS lhc_travel IMPLEMENTATION.
       ENDIF.
 
       IF travel-BeginDate < cl_abap_context_info=>get_system_date( ) AND travel-BeginDate IS NOT INITIAL.
-        APPEND VALUE #( %tky               = travel-%tky ) TO failed-travel.
+*        APPEND VALUE #( %tky               = travel-%tky ) TO failed-traveldata.
 
         APPEND VALUE #( %tky               = travel-%tky
                         %state_area        = 'VALIDATE_DATES'
                         %msg               = NEW /dmo/cm_flight_messages(
                                                                 begin_date = travel-BeginDate
                                                                 textid     = /dmo/cm_flight_messages=>begin_date_on_or_bef_sysdate
-                                                                severity   = if_abap_behv_message=>severity-error )
+                                                                severity   = if_abap_behv_message=>severity-warning )
                         %element-BeginDate = if_abap_behv=>mk-on
         ) TO reported-travel.
       ENDIF.
@@ -246,6 +248,45 @@ CLASS lhc_travel IMPLEMENTATION.
         ) TO reported-travel.
       ENDIF.
     ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD deductDiscount.
+    DATA travels_for_update TYPE TABLE FOR UPDATE zi_db_flight_td.
+    DATA(keys_with_valid_discount) = keys.
+
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        FIELDS ( BookingFee )
+        WITH CORRESPONDING #( keys_with_valid_discount )
+        RESULT DATA(travels).
+
+    LOOP AT travels ASSIGNING FIELD-SYMBOL(<travel>).
+      DATA(reduced_fee) = <travel>-BookingFee * ( 1 - 3 / 10 ).
+      APPEND VALUE #(
+        %tky       = <travel>-%tky
+        BookingFee = reduced_fee
+      ) TO travels_for_update.
+    ENDLOOP.
+
+    " update data with reduced fee
+    MODIFY ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        UPDATE FIELDS ( BookingFee )
+        WITH travels_for_update.
+
+    " read changed data for action result
+    READ ENTITIES OF zi_db_flight_td IN LOCAL MODE
+        ENTITY Travel
+        ALL FIELDS WITH
+        CORRESPONDING #( travels )
+        RESULT DATA(travels_with_discount).
+
+    " set action result
+    result = VALUE #( FOR travel IN travels_with_discount (
+      %tky   = travel-%tky
+      %param = travel
+    ) ).
 
   ENDMETHOD.
 

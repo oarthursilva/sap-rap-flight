@@ -35,11 +35,14 @@ early numbering
   validation validateCustomer on save { create; field CustomerID; }
   validation validateDates on save { create; field BeginDate, EndDate; }
 
+  action deductDiscount result [1] $self;
+
   draft action Edit;
   draft action Activate optimized;
   draft action Discard;
   draft action Resume;
-  draft determine action Prepare {
+  draft determine action Prepare
+  {
     validation validateCustomer;
     validation validateDates;
   }

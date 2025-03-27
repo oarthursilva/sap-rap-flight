@@ -74,8 +74,17 @@ annotate view ZC_DB_FLIGHT_TD with
   Description;
 
   @UI: {
-    lineItem:       [{ position: 100, importance: #MEDIUM }],
-    identification: [{ position: 100 }]
+    lineItem:       [{ position: 100, importance: #MEDIUM }
+//                     { type: #FOR_ACTION, dataAction: 'copyTravel', label: 'Copy travel'  }
+//                     { type: #FOR_ACTION, dataAction: 'acceptTravel', label: 'Accept Travel'  }
+//                     { type: #FOR_ACTION, dataAction: 'rejectTravel', label: 'Reject Travel'  }
+    ],
+    identification: [{ position: 100 },
+                     { type: #FOR_ACTION, dataAction: 'deductDiscount', label: 'Deduct Discount'  }
+//                     { type: #FOR_ACTION, dataAction: 'acceptTravel', label: 'Accept Travel'  }
+//                     { type: #FOR_ACTION, dataAction: 'rejectTravel', label: 'Reject Travel'  }
+    ],
+    textArrangement: #TEXT_ONLY
   }
   OverallStatus;
 
